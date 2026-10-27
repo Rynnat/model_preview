@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Frelso Anahtarlık Tasarımları</title>
+<style>
+  :root {
+    --bg: #f4f3f0; --panel: #ffffff; --ink: #1d1d1b; --muted: #6d6b66; --line: #e3e1dc;
+    --accent: #f39a2b; --accent-ink: #1d1d1b; --sel: #fff3e3;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #161615; --panel: #1f1f1d; --ink: #f2f1ee; --muted: #a3a19b; --line: #33322f;
+      --accent: #f6a744; --accent-ink: #161615; --sel: #2d2418;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body { background: var(--bg); color: var(--ink); font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+         display: grid; grid-template-columns: 300px 1fr; }
+  aside { background: var(--panel); border-right: 1px solid var(--line); overflow-y: auto; height: 100vh; position: sticky; top: 0; }
+  .brand { padding: 18px 18px 12px; border-bottom: 1px solid var(--line); }
+  .brand b { font-size: 18px; letter-spacing: .02em; }
+  .brand span { display: block; color: var(--muted); font-size: 13px; margin-top: 2px; }
+  .grp { padding: 14px 18px 6px; color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .08em; }
+  .item { display: flex; gap: 12px; align-items: center; width: 100%; padding: 8px 14px; border: 0; background: none;
+          color: inherit; font: inherit; text-align: left; cursor: pointer; border-left: 3px solid transparent; }
+  .item:hover { background: var(--sel); }
+  .item.on { background: var(--sel); border-left-color: var(--accent); }
+  .item img { width: 52px; height: 52px; object-fit: contain; border-radius: 8px; background: #ecebe7; flex: none; }
+  .item small { display: block; color: var(--muted); font-size: 12px; }
+  main { display: flex; flex-direction: column; min-width: 0; height: 100vh; }
+  .stage { position: relative; flex: 1; min-height: 0; overflow: hidden; cursor: grab; touch-action: none; user-select: none;
+           display: flex; align-items: center; justify-content: center; background: #edece9; }
+  .stage.drag { cursor: grabbing; }
+  .stage img { max-width: 100%; max-height: 100%; aspect-ratio: 1; object-fit: contain; pointer-events: none;
+               transform-origin: center; transition: transform .08s linear; }
+  .hint { position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%); background: rgba(0,0,0,.55); color: #fff;
+          font-size: 13px; padding: 6px 12px; border-radius: 99px; pointer-events: none; transition: opacity .6s; }
+  .bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 10px 16px; background: var(--panel);
+         border-top: 1px solid var(--line); }
+  .bar button { border: 1px solid var(--line); background: var(--panel); color: inherit; font: inherit; padding: 7px 14px;
+                border-radius: 8px; cursor: pointer; }
+  .bar button:hover { border-color: var(--accent); }
+  .bar button.on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+  .bar input[type=range] { flex: 1; min-width: 140px; accent-color: var(--accent); }
+  .info { padding: 14px 18px 18px; background: var(--panel); border-top: 1px solid var(--line); }
+  .info h1 { font-size: 18px; margin: 0 0 4px; }
+  .info p { margin: 0 0 8px; color: var(--muted); }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+  .chip { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; border: 1px solid var(--line); border-radius: 99px; padding: 3px 10px; }
+  .dot { width: 12px; height: 12px; border-radius: 50%; border: 1px solid rgba(0,0,0,.2); }
+  .menu { display: none; }
+  @media (max-width: 760px) {
+    body { grid-template-columns: 1fr; }
+    aside { position: fixed; inset: 0 25% 0 0; z-index: 5; transform: translateX(-102%); transition: transform .2s; box-shadow: 0 0 30px rgba(0,0,0,.3); }
+    aside.open { transform: none; }
+    .menu { display: inline-block; }
+    main { height: 100dvh; }
+  }
+</style>
+</head>
+<body>
+<aside id="side">
+  <div class="brand"><b>FRELSO</b><span>Anahtarlık tasarımları · sürükleyerek çevirin</span></div>
+  <div id="list"></div>
+</aside>
+<main>
+  <div class="stage" id="stage">
+    <img id="view" alt="">
+    <div class="hint" id="hint">↔ Sürükleyerek çevirin · tekerlek / iki parmakla yakınlaştırın</div>
+  </div>
+  <div class="bar">
+    <button class="menu" id="menu">☰ Modeller</button>
+    <button id="front">Ön</button>
+    <button id="back">Arka</button>
+    <button id="spin">⟳ Döndür</button>
+    <input type="range" id="angle" min="0" max="35" value="0" aria-label="Açı">
+    <button id="reset">Yakınlaştırmayı sıfırla</button>
+  </div>
+  <div class="info">
+    <h1 id="title"></h1>
+    <p id="note"></p>
+    <div class="chips" id="chips"></div>
+  </div>
+</main>
+<script src="data.js"></script>
+<script>
+const N = 36;
+const RGB = { kirmizi: "#bd1a12", siyah: "#141414", gri: "#9ea3aa", yesil: "#268c2e", turuncu: "#ff6b0a", beyaz: "#ebebe6" };
+const AD = { kirmizi: "Kırmızı", siyah: "Siyah", gri: "Metal gri", yesil: "Yeşil", turuncu: "Turuncu", beyaz: "Beyaz" };
+const $ = id => document.getElementById(id);
+const view = $("view"), stage = $("stage"), angle = $("angle");
+let cur = null, frame = 0, frames = [], zoom = 1, spinT = null;
+
+function src(id, i) { return `img/${id}/${String(i).padStart(2, "0")}.jpg`; }
+
+function buildList() {
+  let g = null;
+  for (const m of MODELS) {
+    if (m.grup !== g) { g = m.grup; const d = document.createElement("div"); d.className = "grp"; d.textContent = g; $("list").append(d); }
+    const b = document.createElement("button");
+    b.className = "item"; b.dataset.id = m.id;
+    b.innerHTML = `<img loading="lazy" src="${src(m.id, 0)}" alt=""><span>${m.baslik}<small>${m.olcu[0]} × ${m.olcu[1]} × ${m.olcu[2]} mm</small></span>`;
+    b.onclick = () => { select(m.id); $("side").classList.remove("open"); };
+    $("list").append(b);
+  }
+}
+
+function select(id) {
+  cur = MODELS.find(m => m.id === id) || MODELS[0];
+  document.querySelectorAll(".item").forEach(b => b.classList.toggle("on", b.dataset.id === cur.id));
+  frames = Array.from({ length: N }, (_, i) => { const im = new Image(); im.src = src(cur.id, i); return im; });
+  $("title").textContent = cur.baslik;
+  $("note").textContent = cur.not;
+  $("chips").innerHTML = `<span class="chip">${cur.olcu[0]} × ${cur.olcu[1]} × ${cur.olcu[2]} mm</span>` +
+    cur.renkler.map(c => `<span class="chip"><span class="dot" style="background:${RGB[c]}"></span>${AD[c]}</span>`).join("");
+  try { history.replaceState(null, "", "#" + cur.id); } catch (e) {}
+  setZoom(1); show(0);
+}
+
+function show(i) {
+  frame = ((i % N) + N) % N;
+  view.src = src(cur.id, frame);
+  angle.value = frame;
+  $("front").classList.toggle("on", frame === 0);
+  $("back").classList.toggle("on", frame === N / 2);
+}
+
+function setZoom(z) { zoom = Math.min(4, Math.max(1, z)); view.style.transform = `scale(${zoom})`; }
+function stopSpin() { clearInterval(spinT); spinT = null; $("spin").classList.remove("on"); }
+
+// surukleyerek cevir (fare + dokunma), iki parmakla yakinlastir
+let drag = null; const pts = new Map(); let pinch = null;
+stage.addEventListener("pointerdown", e => {
+  stage.setPointerCapture(e.pointerId); pts.set(e.pointerId, e);
+  if (pts.size === 1) { drag = { x: e.clientX, f: frame }; stage.classList.add("drag"); stopSpin(); $("hint").style.opacity = 0; }
+  if (pts.size === 2) { const [a, b] = [...pts.values()]; pinch = { d: Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY), z: zoom }; drag = null; }
+});
+stage.addEventListener("pointermove", e => {
+  if (!pts.has(e.pointerId)) return; pts.set(e.pointerId, e);
+  if (pinch && pts.size === 2) { const [a, b] = [...pts.values()]; setZoom(pinch.z * Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY) / pinch.d); return; }
+  if (drag) { const step = stage.clientWidth / N / 1.2; show(drag.f - Math.round((e.clientX - drag.x) / step)); }
+});
+const up = e => { pts.delete(e.pointerId); if (pts.size < 2) pinch = null; if (!pts.size) { drag = null; stage.classList.remove("drag"); } };
+stage.addEventListener("pointerup", up); stage.addEventListener("pointercancel", up);
+stage.addEventListener("wheel", e => { e.preventDefault(); setZoom(zoom * (e.deltaY < 0 ? 1.12 : 1 / 1.12)); }, { passive: false });
+
+$("front").onclick = () => { stopSpin(); show(0); };
+$("back").onclick = () => { stopSpin(); show(N / 2); };
+$("reset").onclick = () => setZoom(1);
+$("spin").onclick = () => { if (spinT) return stopSpin(); $("spin").classList.add("on"); spinT = setInterval(() => show(frame + 1), 90); };
+angle.oninput = () => { stopSpin(); show(+angle.value); };
+$("menu").onclick = () => $("side").classList.toggle("open");
+document.addEventListener("keydown", e => { if (e.key === "ArrowLeft") show(frame + 1); if (e.key === "ArrowRight") show(frame - 1); });
+
+buildList();
+select(location.hash.slice(1));
+</script>
+</body>
+</html>
