@@ -30,14 +30,14 @@
   .item.on { background: var(--sel); border-left-color: var(--accent); }
   .item img { width: 52px; height: 52px; object-fit: contain; border-radius: 8px; background: #ecebe7; flex: none; }
   .item small { display: block; color: var(--muted); font-size: 12px; }
-  main { display: flex; flex-direction: column; min-width: 0; height: 100vh; }
-  .stage { position: relative; flex: 1; min-height: 0; overflow: hidden; cursor: grab; touch-action: none; user-select: none;
+  main { display: flex; flex-direction: column; min-width: 0; height: 100vh; overflow-y: auto; }
+  .stage { position: relative; flex: 1 0 auto; min-height: 320px; overflow: hidden; cursor: grab; touch-action: none; user-select: none;
            display: flex; align-items: center; justify-content: center; background: #edece9; }
   .stage.drag { cursor: grabbing; }
-  .stage img { max-width: 100%; max-height: 100%; aspect-ratio: 1; object-fit: contain; pointer-events: none;
-               transform-origin: center; transition: transform .08s linear; }
+  .stage canvas { width: min(100%, calc(100vh - 300px)); min-width: 300px; height: auto; aspect-ratio: 1; pointer-events: none;
+                  transform-origin: center; transition: transform .08s linear; }
   .hint { position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%); background: rgba(0,0,0,.55); color: #fff;
-          font-size: 13px; padding: 6px 12px; border-radius: 99px; pointer-events: none; transition: opacity .6s; }
+          font-size: 13px; padding: 6px 12px; border-radius: 99px; pointer-events: none; transition: opacity .6s; white-space: nowrap; }
   .bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 10px 16px; background: var(--panel);
          border-top: 1px solid var(--line); }
   .bar button { border: 1px solid var(--line); background: var(--panel); color: inherit; font: inherit; padding: 7px 14px;
@@ -51,6 +51,13 @@
   .chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
   .chip { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; border: 1px solid var(--line); border-radius: 99px; padding: 3px 10px; }
   .dot { width: 12px; height: 12px; border-radius: 50%; border: 1px solid rgba(0,0,0,.2); }
+  .colors { display: grid; gap: 8px; margin: 12px 0 6px; }
+  .crow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .crow b { width: 120px; font-weight: 600; font-size: 14px; }
+  .sw { width: 30px; height: 30px; border-radius: 50%; border: 2px solid var(--line); cursor: pointer; padding: 0; position: relative; }
+  .sw.on { outline: 3px solid var(--accent); outline-offset: 2px; }
+  .sw.yok::after { content: ""; position: absolute; left: -3px; right: -3px; top: 50%; height: 2px; background: #888; transform: rotate(-45deg); }
+  .legend { font-size: 12px; color: var(--muted); }
   .menu { display: none; }
   @media (max-width: 760px) {
     body { grid-template-columns: 1fr; }
@@ -58,6 +65,8 @@
     aside.open { transform: none; }
     .menu { display: inline-block; }
     main { height: 100dvh; }
+    .stage canvas { width: 100%; min-width: 0; }
+    .crow b { width: 100%; }
   }
 </style>
 </head>
@@ -68,7 +77,7 @@
 </aside>
 <main>
   <div class="stage" id="stage">
-    <img id="view" alt="">
+    <canvas id="view" width="900" height="900"></canvas>
     <div class="hint" id="hint">↔ Sürükleyerek çevirin · tekerlek / iki parmakla yakınlaştırın</div>
   </div>
   <div class="bar">
@@ -83,18 +92,22 @@
     <h1 id="title"></h1>
     <p id="note"></p>
     <div class="chips" id="chips"></div>
+    <div class="colors" id="colors"></div>
+    <div class="legend">Üstü çizili renkler için şu an filament yok. Seçtiğiniz renkler linke eklenir; linki kopyalayıp paylaşabilirsiniz.</div>
   </div>
 </main>
 <script src="data.js"></script>
 <script>
 const N = 36;
-const RGB = { kirmizi: "#bd1a12", siyah: "#141414", gri: "#9ea3aa", yesil: "#268c2e", turuncu: "#ff6b0a", beyaz: "#ebebe6" };
-const AD = { kirmizi: "Kırmızı", siyah: "Siyah", gri: "Metal gri", yesil: "Yeşil", turuncu: "Turuncu", beyaz: "Beyaz" };
+const RGB = { kirmizi: [189, 26, 18], siyah: [24, 24, 24], gri: [158, 163, 170], yesil: [38, 140, 46], turuncu: [255, 120, 20], beyaz: [238, 238, 232] };
+const AD = { kirmizi: "Kırmızı", siyah: "Mat siyah", gri: "Metal gri", yesil: "Yeşil", turuncu: "Turuncu", beyaz: "Beyaz" };
+const ELDE = new Set(["kirmizi", "siyah", "gri", "yesil"]);
 const $ = id => document.getElementById(id);
-const view = $("view"), stage = $("stage"), angle = $("angle");
-let cur = null, frame = 0, frames = [], zoom = 1, spinT = null;
+const cv = $("view"), ctx = cv.getContext("2d", { willReadFrequently: true }), stage = $("stage"), angle = $("angle");
+let cur = null, frame = 0, zoom = 1, spinT = null, colors = {}, lut = null, cache = [];
 
-function src(id, i) { return `img/${id}/${String(i).padStart(2, "0")}.jpg`; }
+const path = (id, f) => `img/${id}/${f}`;
+const pad = i => String(i).padStart(2, "0");
 
 function buildList() {
   let g = null;
@@ -102,33 +115,102 @@ function buildList() {
     if (m.grup !== g) { g = m.grup; const d = document.createElement("div"); d.className = "grp"; d.textContent = g; $("list").append(d); }
     const b = document.createElement("button");
     b.className = "item"; b.dataset.id = m.id;
-    b.innerHTML = `<img loading="lazy" src="${src(m.id, 0)}" alt=""><span>${m.baslik}<small>${m.olcu[0]} × ${m.olcu[1]} × ${m.olcu[2]} mm</small></span>`;
+    b.innerHTML = `<img loading="lazy" src="${path(m.id, "thumb.jpg")}" alt=""><span>${m.baslik}<small>${m.olcu[0]} × ${m.olcu[1]} × ${m.olcu[2]} mm</small></span>`;
     b.onclick = () => { select(m.id); $("side").classList.remove("open"); };
     $("list").append(b);
   }
 }
 
-function select(id) {
+// her kare: golge (sNN.jpg) + parca haritasi (mNN.png); piksel verisi bir kez cozulur, renk degisince yeniden boyanir
+function loadFrame(i) {
+  if (cache[i]) return cache[i];
+  const id = cur.id;
+  const p = Promise.all(["s" + pad(i) + ".jpg", "m" + pad(i) + ".png"].map(f => new Promise((res, rej) => {
+    const im = new Image(); im.onload = () => res(im); im.onerror = rej; im.src = path(id, f);
+  }))).then(([s, m]) => {
+    const c = document.createElement("canvas"); c.width = c.height = 900;
+    const x = c.getContext("2d", { willReadFrequently: true });
+    x.drawImage(s, 0, 0, 900, 900); const sd = x.getImageData(0, 0, 900, 900).data;
+    x.clearRect(0, 0, 900, 900); x.drawImage(m, 0, 0, 900, 900); const md = x.getImageData(0, 0, 900, 900).data;
+    return { sd, md };
+  });
+  cache[i] = p; return p;
+}
+
+function paint(i) {
+  const id = cur.id;
+  loadFrame(i).then(({ sd, md }) => {
+    if (i !== frame || id !== cur.id) return;
+    const out = ctx.createImageData(900, 900), o = out.data;
+    const cols = cur.gruplar.map(g => RGB[colors[g.k]]);
+    for (let p = 0; p < sd.length; p += 4) {
+      const g = lut[md[p]];
+      if (g < 0) { o[p] = sd[p]; o[p + 1] = sd[p + 1]; o[p + 2] = sd[p + 2]; }
+      else {
+        const s = sd[p] / 255, c = cols[g], lift = 34 * s;      // koyu renklerde de bicim gorunsun
+        o[p] = Math.min(255, c[0] * s * 1.06 + lift);
+        o[p + 1] = Math.min(255, c[1] * s * 1.06 + lift);
+        o[p + 2] = Math.min(255, c[2] * s * 1.06 + lift);
+      }
+      o[p + 3] = 255;
+    }
+    ctx.putImageData(out, 0, 0);
+  });
+}
+
+function buildColors() {
+  $("colors").innerHTML = "";
+  for (const g of cur.gruplar) {
+    const row = document.createElement("div"); row.className = "crow";
+    row.innerHTML = `<b>${g.ad}</b>`;
+    for (const c of Object.keys(RGB)) {
+      const b = document.createElement("button");
+      b.className = "sw" + (colors[g.k] === c ? " on" : "") + (ELDE.has(c) ? "" : " yok");
+      b.style.background = `rgb(${RGB[c].join(",")})`;
+      b.title = AD[c] + (ELDE.has(c) ? "" : " (filament yok)");
+      b.setAttribute("aria-label", `${g.ad}: ${b.title}`);
+      b.onclick = () => { colors[g.k] = c; buildColors(); chips(); saveHash(); paint(frame); };
+      row.append(b);
+    }
+    $("colors").append(row);
+  }
+}
+
+function chips() {
+  const used = [...new Set(cur.gruplar.map(g => colors[g.k]))];
+  $("chips").innerHTML = `<span class="chip">${cur.olcu[0]} × ${cur.olcu[1]} × ${cur.olcu[2]} mm</span>` +
+    `<span class="chip">${used.length} renk</span>` +
+    used.map(c => `<span class="chip"><span class="dot" style="background:rgb(${RGB[c].join(",")})"></span>${AD[c]}</span>`).join("");
+}
+
+function saveHash() {
+  const q = cur.gruplar.filter(g => colors[g.k] !== g.renk).map(g => `${g.k}=${colors[g.k]}`).join("&");
+  try { history.replaceState(null, "", "#" + cur.id + (q ? "&" + q : "")); } catch (e) {}
+}
+
+function select(id, preset = {}) {
   cur = MODELS.find(m => m.id === id) || MODELS[0];
   document.querySelectorAll(".item").forEach(b => b.classList.toggle("on", b.dataset.id === cur.id));
-  frames = Array.from({ length: N }, (_, i) => { const im = new Image(); im.src = src(cur.id, i); return im; });
+  colors = {};
+  for (const g of cur.gruplar) colors[g.k] = RGB[preset[g.k]] ? preset[g.k] : g.renk;
+  lut = new Int8Array(256).fill(-1);
+  cur.seviye.forEach((L, g) => { for (let d = -6; d <= 6; d++) if (L + d > 0 && L + d < 256) lut[L + d] = g; });
+  cache = [];
   $("title").textContent = cur.baslik;
   $("note").textContent = cur.not;
-  $("chips").innerHTML = `<span class="chip">${cur.olcu[0]} × ${cur.olcu[1]} × ${cur.olcu[2]} mm</span>` +
-    cur.renkler.map(c => `<span class="chip"><span class="dot" style="background:${RGB[c]}"></span>${AD[c]}</span>`).join("");
-  try { history.replaceState(null, "", "#" + cur.id); } catch (e) {}
-  setZoom(1); show(0);
+  chips(); buildColors(); saveHash(); setZoom(1); show(0);
+  for (let i = 0; i < N; i++) loadFrame(i);          // tum kareleri arka planda hazirla
 }
 
 function show(i) {
   frame = ((i % N) + N) % N;
-  view.src = src(cur.id, frame);
   angle.value = frame;
   $("front").classList.toggle("on", frame === 0);
   $("back").classList.toggle("on", frame === N / 2);
+  paint(frame);
 }
 
-function setZoom(z) { zoom = Math.min(4, Math.max(1, z)); view.style.transform = `scale(${zoom})`; }
+function setZoom(z) { zoom = Math.min(4, Math.max(1, z)); cv.style.transform = `scale(${zoom})`; }
 function stopSpin() { clearInterval(spinT); spinT = null; $("spin").classList.remove("on"); }
 
 // surukleyerek cevir (fare + dokunma), iki parmakla yakinlastir
@@ -156,7 +238,8 @@ $("menu").onclick = () => $("side").classList.toggle("open");
 document.addEventListener("keydown", e => { if (e.key === "ArrowLeft") show(frame + 1); if (e.key === "ArrowRight") show(frame - 1); });
 
 buildList();
-select(location.hash.slice(1));
+const [hid, ...hq] = location.hash.slice(1).split("&");
+select(hid, Object.fromEntries(hq.map(x => x.split("="))));
 </script>
 </body>
 </html>
