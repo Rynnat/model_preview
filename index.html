@@ -101,7 +101,7 @@
 const N = 36;
 const RGB = { kirmizi: [189, 26, 18], siyah: [24, 24, 24], gri: [158, 163, 170], yesil: [38, 140, 46], turuncu: [255, 120, 20], beyaz: [238, 238, 232] };
 const AD = { kirmizi: "Kırmızı", siyah: "Mat siyah", gri: "Metal gri", yesil: "Yeşil", turuncu: "Turuncu", beyaz: "Beyaz" };
-const ELDE = new Set(["kirmizi", "siyah", "gri", "yesil"]);
+const ELDE = new Set(["kirmizi", "siyah", "gri", "yesil", "turuncu", "beyaz"]);
 const $ = id => document.getElementById(id);
 const cv = $("view"), ctx = cv.getContext("2d", { willReadFrequently: true }), stage = $("stage"), angle = $("angle");
 let cur = null, frame = 0, zoom = 1, spinT = null, colors = {}, lut = null, cache = [];
